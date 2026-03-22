@@ -1,0 +1,964 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Descenso del Gradiente — Visualizador 3D</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,400;0,500&family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500&display=swap');
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --ink:#111;--ink2:#1e1e1e;--ink3:#333;
+  --paper:#f4f2ed;--paper2:#ece9e2;--paper3:#e2dfd7;
+  --dim:#777;--dimmer:#aaa;
+  --red:#b83230;--green:#1a6e42;--amber:#b86020;
+  --line:rgba(0,0,0,0.07);--line2:rgba(0,0,0,0.12);
+  --mono:'DM Mono',monospace;
+  --serif:'Instrument Serif',Georgia,serif;
+  --sans:'DM Sans',sans-serif;
+}
+html,body{height:100%}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-weight:300;overflow:hidden}
+
+/* ── SHELL ──────────────────────────────────── */
+.shell{display:grid;grid-template-columns:1fr 330px;grid-template-rows:44px 1fr;height:100vh;width:100vw}
+
+/* ── TOPBAR ─────────────────────────────────── */
+.bar{grid-column:1/3;display:flex;align-items:center;padding:0 20px;border-bottom:1px solid var(--line2);background:var(--paper);gap:0;overflow:hidden}
+.bar-brand{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.05em;color:var(--ink);margin-right:22px;flex-shrink:0}
+.bar-brand small{color:var(--dim);font-weight:400}
+.bar-sep{width:1px;height:14px;background:var(--line2);margin:0 14px;flex-shrink:0}
+.bar-tab{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);cursor:pointer;padding:2px 0;margin-right:16px;border-bottom:1.5px solid transparent;white-space:nowrap;transition:color .12s;flex-shrink:0}
+.bar-tab:hover{color:var(--ink)}.bar-tab.on{color:var(--ink);border-bottom-color:var(--ink)}
+.bar-hint{margin-left:auto;font-family:var(--mono);font-size:9px;color:var(--dimmer);letter-spacing:.07em;display:flex;align-items:center;gap:5px;flex-shrink:0;white-space:nowrap}
+.bar-hint kbd{padding:1px 4px;border:1px solid var(--line2);border-radius:3px;font-size:8px;color:var(--dim);background:var(--paper2)}
+
+/* ── 3D VIEW ────────────────────────────────── */
+.view{position:relative;background:var(--paper2);border-right:1px solid var(--line2);overflow:hidden;min-height:0}
+#c3d{display:block;width:100%;height:100%;cursor:grab}
+#c3d:active{cursor:grabbing}
+
+/* Title overlay */
+.ov-title{position:absolute;top:16px;left:20px;pointer-events:none;user-select:none}
+.ov-title h1{font-family:var(--serif);font-style:italic;font-size:28px;font-weight:400;line-height:1.08;color:var(--ink);letter-spacing:-.01em;text-shadow:0 1px 3px rgba(255,255,255,.6)}
+.ov-title h1 em{font-style:normal;color:var(--dim);font-size:22px}
+.ov-title p{margin-top:5px;font-family:var(--mono);font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim)}
+
+/* Legend */
+.ov-legend{position:absolute;top:16px;right:16px;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+.leg-row{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:9px;color:var(--dim);letter-spacing:.05em}
+.leg-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+
+/* Calc overlay — appears when stepping, replaces legend */
+.calc-ov{
+  position:absolute;top:16px;right:16px;
+  background:rgba(244,242,237,.97);border:1px solid var(--line2);
+  border-radius:8px;padding:14px 16px;width:232px;
+  display:none;z-index:60;font-family:var(--mono);
+}
+.calc-ov.show{display:block}
+.calc-ov-title{font-size:8.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--dimmer);margin-bottom:10px}
+.calc-row{font-size:11px;line-height:2.1;color:var(--ink)}
+.calc-row .k{color:var(--dim);font-size:9.5px}
+.calc-row .v{font-weight:500}
+.calc-row .v.red{color:var(--red)}.calc-row .v.amber{color:var(--amber)}.calc-row .v.ok{color:var(--green)}
+.calc-div{height:1px;background:var(--line);margin:8px 0}
+.calc-eq{font-size:10.5px;color:var(--ink2);line-height:2.1}
+.calc-eq .k{color:var(--dim);font-size:9px}
+.calc-eq .new{font-weight:500;color:var(--green)}
+
+/* Camera strip */
+.cam-strip{position:absolute;bottom:16px;left:20px;display:flex;gap:4px;flex-wrap:wrap}
+.cbtn{height:29px;padding:0 10px;background:var(--paper);border:1px solid var(--line2);border-radius:4px;cursor:pointer;font-family:var(--mono);font-size:9px;letter-spacing:.05em;color:var(--dim);display:flex;align-items:center;gap:4px;transition:all .12s;user-select:none;white-space:nowrap}
+.cbtn:hover,.cbtn.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+
+/* HUD */
+.hud{position:absolute;bottom:16px;right:16px;background:var(--paper);border:1px solid var(--line2);border-radius:7px;padding:10px 14px;display:grid;grid-template-columns:auto auto;gap:3px 18px;pointer-events:none;z-index:40}
+.hud-k{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--dimmer);display:flex;align-items:center}
+.hud-v{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--ink);text-align:right}
+.hud-v.red{color:var(--red)}.hud-v.amber{color:var(--amber)}.hud-v.ok{color:var(--green)}
+
+/* Tooltip on cbtn hover */
+.cbtn[title]:hover::after{content:attr(title);position:absolute;bottom:36px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--paper);font-size:9px;padding:3px 8px;border-radius:3px;white-space:nowrap;pointer-events:none;font-family:var(--mono)}
+
+/* Toast */
+.toast{position:absolute;bottom:62px;left:50%;transform:translateX(-50%) translateY(6px);background:var(--ink);color:var(--paper);padding:8px 18px;border-radius:5px;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;opacity:0;pointer-events:none;transition:opacity .22s,transform .22s;white-space:nowrap;z-index:50}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* Interaction hint that fades out */
+.drag-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);opacity:.55;pointer-events:none;transition:opacity .5s}
+.drag-hint.gone{opacity:0}
+
+/* ── PANEL ──────────────────────────────────── */
+.panel{background:var(--paper);display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;min-height:0}
+.panel::-webkit-scrollbar{width:3px}
+.panel::-webkit-scrollbar-thumb{background:var(--line2);border-radius:2px}
+.sec{padding:15px 20px;border-bottom:1px solid var(--line)}
+.sec:last-child{border-bottom:none;flex:1}
+.eyebrow{font-family:var(--mono);font-size:8.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--dimmer);margin-bottom:12px}
+
+/* Play button */
+.playbtn{width:100%;height:44px;background:var(--ink);color:var(--paper);border:none;border-radius:5px;font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;transition:all .16s;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:7px}
+.playbtn:hover{opacity:.88;transform:translateY(-1px)}.playbtn:active{transform:translateY(0)}
+.playbtn.running{background:var(--ink2)}.playbtn.done{background:var(--green)}.playbtn.diverged{background:var(--red)}
+
+/* Button groups */
+.bgroup{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:4px}
+.bgroup2{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.bbtn{padding:7px 0;background:transparent;border:1px solid var(--line2);border-radius:4px;font-family:var(--mono);font-size:8.5px;letter-spacing:.05em;color:var(--dim);cursor:pointer;text-align:center;transition:all .12s}
+.bbtn:hover{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.bbtn.active{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+
+/* Progress */
+.prog{height:2px;background:var(--paper3);border-radius:1px;margin-bottom:12px;overflow:hidden}
+.prog-fill{height:100%;background:var(--ink);border-radius:1px;width:0%;transition:width .25s ease}
+
+/* Params */
+.param-list{display:flex;flex-direction:column;gap:11px}
+.prow{display:grid;grid-template-columns:80px 1fr 46px;align-items:center;gap:7px}
+.plabel{font-family:var(--mono);font-size:9.5px;color:var(--dim);letter-spacing:.04em}
+.plabel sup{font-size:8px;color:var(--dimmer)}
+input[type=range]{-webkit-appearance:none;width:100%;height:2px;background:var(--paper3);border-radius:1px;outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--ink);border:2px solid var(--paper);box-shadow:0 0 0 1px var(--ink3);cursor:pointer;transition:transform .1s}
+input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.3)}
+input.num{width:100%;background:var(--paper2);border:1px solid var(--line);border-radius:3px;padding:4px 6px;font-family:var(--mono);font-size:10.5px;font-weight:500;color:var(--ink);outline:none;text-align:right;transition:border-color .12s;-moz-appearance:textfield}
+input.num::-webkit-inner-spin-button,input.num::-webkit-outer-spin-button{-webkit-appearance:none}
+input.num:focus{border-color:var(--ink3);background:var(--paper)}
+
+/* Presets */
+.preset-list{display:flex;flex-direction:column;gap:4px}
+.pset{display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid var(--line);border-radius:4px;cursor:pointer;transition:all .12s}
+.pset:hover{background:var(--paper2);border-color:var(--line2)}
+.pset.on{background:var(--ink);border-color:var(--ink)}
+.pset.on .pset-name{color:var(--paper)}
+.pset.on .pset-tag{color:rgba(255,255,255,.45)}
+.pset-dot{width:7px;height:7px;border-radius:2px;flex:0 0 auto}
+.pset-name{font-family:var(--sans);font-size:11.5px;color:var(--ink);flex:1}
+.pset-tag{font-family:var(--mono);font-size:8.5px;color:var(--dimmer);letter-spacing:.04em;white-space:nowrap}
+
+/* Formula box */
+.fbox{background:var(--paper2);border-radius:4px;padding:10px 12px;font-family:var(--mono);font-size:10.5px;color:var(--ink);line-height:2;margin-bottom:9px}
+.fbox .sub{color:var(--dim);font-size:9.5px}
+
+/* Chart */
+.chart-wrap{position:relative;width:100%;height:68px}
+
+/* Table */
+.tbl-wrap{max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:4px;margin-top:7px}
+.tbl-wrap::-webkit-scrollbar{width:3px;height:3px}
+.tbl-wrap::-webkit-scrollbar-thumb{background:var(--line2);border-radius:2px}
+table{width:100%;border-collapse:collapse;font-family:var(--mono)}
+thead th{position:sticky;top:0;z-index:2;padding:5px 8px;font-size:8.5px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);background:var(--paper2);border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+tbody td{padding:5px 8px;font-size:9.5px;border-bottom:1px solid rgba(0,0,0,.03);color:var(--dim);white-space:nowrap}
+tr:last-child td{border-bottom:none}
+tr.r-hi td{background:rgba(0,0,0,.03);color:var(--ink);font-weight:500}
+tr.r-ms td{background:rgba(26,110,66,.05);color:var(--green)}
+tr.r-conv td{background:rgba(26,110,66,.1);color:var(--green);font-weight:500}
+tr.r-div td{background:rgba(184,50,48,.06);color:var(--red)}
+.ms-pill{display:inline-block;padding:2px 5px;background:var(--green);color:#fff;font-size:8px;border-radius:2px;margin-left:3px;letter-spacing:.04em}
+.jbar{display:inline-block;height:3px;background:var(--ink);opacity:.16;border-radius:1px;vertical-align:middle;margin-right:4px}
+
+/* Convergence summary */
+.conv-card{display:none;margin-top:8px;padding:11px 13px;background:rgba(26,110,66,.06);border:1px solid rgba(26,110,66,.2);border-radius:5px}
+.conv-card.show{display:block}
+.conv-card-title{font-family:var(--mono);font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--green);margin-bottom:9px}
+.conv-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.conv-k{font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dimmer)}
+.conv-v{font-family:var(--mono);font-size:14px;font-weight:500;color:var(--ink)}
+
+/* Speed indicator */
+.speed-track{display:flex;gap:3px;margin-top:4px}
+.speed-pip{height:3px;flex:1;border-radius:1px;background:var(--paper3);transition:background .2s}
+.speed-pip.on{background:var(--ink)}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+.sec{animation:fadeUp .3s ease both}
+.sec:nth-child(1){animation-delay:0s}.sec:nth-child(2){animation-delay:.04s}
+.sec:nth-child(3){animation-delay:.08s}.sec:nth-child(4){animation-delay:.12s}
+.sec:nth-child(5){animation-delay:.16s}.sec:nth-child(6){animation-delay:.2s}
+
+@media(max-width:680px){
+  body{overflow:auto}
+  .shell{display:flex;flex-direction:column;height:auto;min-height:100vh}
+  .bar{position:sticky;top:0;z-index:100;height:44px;flex-shrink:0}
+  .bar-tab{display:none}.bar-sep:nth-child(2){display:none}
+  .view{width:100%;height:56vw;min-height:200px;flex-shrink:0;border-right:none;border-bottom:1px solid var(--line2)}
+  .panel{width:100%;overflow:visible;flex:1}
+  .ov-title h1{font-size:20px}.ov-title p{display:none}
+  .ov-legend{display:none}
+  .hud{bottom:8px;right:8px;padding:7px 10px;gap:2px 12px}
+  .hud-k{font-size:8px}.hud-v{font-size:11px}
+  .cam-strip{bottom:8px;left:8px;gap:3px}
+  .cbtn{height:25px;padding:0 7px;font-size:8.5px}
+  .tbl-wrap{max-height:160px}
+  .calc-ov{width:190px;padding:10px 12px}
+  .calc-eq{font-size:9.5px}.calc-row{font-size:10px}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<!-- ── TOPBAR ──────────────────────────────────── -->
+<header class="bar">
+  <div class="bar-brand">∂J/∂w <small>· gradient descent 3d</small></div>
+  <div class="bar-sep"></div>
+  <div class="bar-tab on" onclick="">Superficie</div>
+  <div class="bar-tab" onclick="toggleWire()">Malla</div>
+  <div class="bar-tab" onclick="toggleOpacity()">Transparencia</div>
+  <div class="bar-tab" onclick="toggleContours()">Curvas nivel</div>
+  <div class="bar-tab" onclick="exportCSV()">Exportar CSV</div>
+  <div class="bar-hint">
+    <kbd>drag</kbd>rotar &nbsp;<kbd>scroll</kbd>zoom &nbsp;<kbd>dbl-click</kbd>enfocar
+    <span style="margin-left:6px;color:var(--line2)">|</span>
+    IT Pachuca · 2026
+  </div>
+</header>
+
+<!-- ── 3D VIEW ────────────────────────────────── -->
+<div class="view">
+  <canvas id="c3d"></canvas>
+
+  <div class="ov-title">
+    <h1>Descenso del<br><em>gradiente</em></h1>
+    <p>J(w₁,w₂) = ½(w₁x₁ + w₂x₂ − y)²</p>
+  </div>
+
+  <div class="ov-legend" id="ov-legend">
+    <div class="leg-row"><div class="leg-dot" style="background:#b83230"></div>Error alto</div>
+    <div class="leg-row"><div class="leg-dot" style="background:#3a6fb8"></div>Error bajo</div>
+    <div class="leg-row"><div class="leg-dot" style="background:#e8c040"></div>Posición actual</div>
+    <div class="leg-row"><div class="leg-dot" style="background:#1a6e42"></div>Mínimo global w*</div>
+    <div class="leg-row"><div class="leg-dot" style="background:#444"></div>Trayectoria + flujo</div>
+  </div>
+
+  <!-- Step-by-step calc panel -->
+  <div class="calc-ov" id="calc-ov">
+    <div class="calc-ov-title">// Cálculo iteración actual</div>
+    <div class="calc-row"><span class="k">ŷ  =</span> w₁·2 + w₂·3 = <span class="v" id="co-yh">1.3000</span></div>
+    <div class="calc-row"><span class="k">J  =</span> ½(ŷ−1)² = <span class="v red" id="co-j">0.04500</span></div>
+    <div class="calc-div"></div>
+    <div class="calc-eq">
+      <span class="k">∂J/∂ŷ</span> = ŷ−y = <span id="co-e">0.3000</span><br>
+      <span class="k">∂J/∂w₁</span> = ∂J/∂ŷ·2 = <span id="co-g1">0.6000</span><br>
+      <span class="k">∂J/∂w₂</span> = ∂J/∂ŷ·3 = <span id="co-g2">0.9000</span>
+    </div>
+    <div class="calc-div"></div>
+    <div class="calc-eq">
+      w₁: <span id="co-w1p">0.5000</span> − α·<span id="co-g1b">0.6000</span> = <span class="new" id="co-w1n">0.4400</span><br>
+      w₂: <span id="co-w2p">0.1000</span> − α·<span id="co-g2b">0.9000</span> = <span class="new" id="co-w2n">0.0100</span>
+    </div>
+    <div class="calc-div"></div>
+    <div class="calc-row" style="font-size:9.5px">
+      <span class="k">iter</span> <span class="v" id="co-iter">0</span>
+      &nbsp;<span class="k">α</span> <span class="v" id="co-a">0.10</span>
+    </div>
+  </div>
+
+  <!-- Camera controls -->
+  <div class="cam-strip">
+    <div class="cbtn" onclick="goView('iso')" title="Vista isométrica">◈ Iso</div>
+    <div class="cbtn" onclick="goView('front')" title="Vista frontal">▣ Frente</div>
+    <div class="cbtn" onclick="goView('top')" title="Vista superior">↓ Top</div>
+    <div class="cbtn" onclick="goView('side')" title="Vista lateral">→ Lado</div>
+    <div class="cbtn" onclick="goView('diag')" title="Vista diagonal">⟋ Diag</div>
+    <div class="cbtn" onclick="focusBall()" title="Enfocar en la bola">◎ Foco</div>
+    <div class="cbtn" onclick="zoomIn()">+</div>
+    <div class="cbtn" onclick="zoomOut()">−</div>
+    <div class="cbtn" onclick="resetCam()" title="Restablecer cámara">⌂</div>
+  </div>
+
+  <!-- HUD -->
+  <div class="hud">
+    <div class="hud-k">Iter.</div>  <div class="hud-v" id="h-i">0</div>
+    <div class="hud-k">J(w)</div>   <div class="hud-v red" id="h-j">0.04500</div>
+    <div class="hud-k">ŷ → 1</div> <div class="hud-v" id="h-y">1.300</div>
+    <div class="hud-k">w₁/w₂</div> <div class="hud-v" id="h-w">0.50/0.10</div>
+  </div>
+
+  <div class="drag-hint" id="drag-hint">Arrastra para rotar · Scroll para zoom</div>
+  <div class="toast" id="toast"></div>
+</div>
+
+<!-- ── PANEL ──────────────────────────────────── -->
+<aside class="panel">
+
+  <!-- Controls -->
+  <div class="sec">
+    <div class="prog"><div class="prog-fill" id="prog"></div></div>
+    <button class="playbtn" id="play-btn" onclick="toggleAnim()">
+      <span id="play-icon">▶</span><span id="play-lbl">Iniciar descenso</span>
+    </button>
+    <div class="bgroup">
+      <div class="bbtn" onclick="stepOnce()" title="Un paso del gradiente">→ Paso</div>
+      <div class="bbtn" onclick="runFull()" title="Ejecutar todo instantáneamente">⚡ Todo</div>
+      <div class="bbtn" onclick="resetPath()" title="Reiniciar">↺ Reset</div>
+    </div>
+    <div class="bgroup2" style="margin-top:4px">
+      <div class="bbtn" id="btn-trail" onclick="toggleTrail()" title="Mostrar/ocultar rastro">Rastro</div>
+      <div class="bbtn" id="btn-arrow" onclick="toggleArrow()" title="Mostrar/ocultar flecha del gradiente">∇ Flecha</div>
+    </div>
+  </div>
+
+  <!-- Parameters -->
+  <div class="sec">
+    <div class="eyebrow">Parámetros</div>
+    <div class="param-list">
+      <div class="prow">
+        <span class="plabel">α <sup>learning rate</sup></span>
+        <input type="range" id="sl-a" min="0.01" max="0.95" step="0.01" value="0.1" oninput="syncP('a',this.value)">
+        <input class="num" id="n-a" type="number" min="0.01" max="0.95" step="0.01" value="0.10" onchange="syncP('a',this.value)">
+      </div>
+      <div class="prow">
+        <span class="plabel">w₁ <sup>inicio</sup></span>
+        <input type="range" id="sl-w1" min="-0.25" max="0.75" step="0.05" value="0.5" oninput="syncP('w1',this.value)">
+        <input class="num" id="n-w1" type="number" min="-0.25" max="0.75" step="0.05" value="0.50" onchange="syncP('w1',this.value)">
+      </div>
+      <div class="prow">
+        <span class="plabel">w₂ <sup>inicio</sup></span>
+        <input type="range" id="sl-w2" min="-0.35" max="0.45" step="0.05" value="0.1" oninput="syncP('w2',this.value)">
+        <input class="num" id="n-w2" type="number" min="-0.35" max="0.45" step="0.05" value="0.10" onchange="syncP('w2',this.value)">
+      </div>
+      <div class="prow">
+        <span class="plabel">Velocidad</span>
+        <input type="range" id="sl-spd" min="1" max="60" step="1" value="22" oninput="onSpeed(this.value)">
+        <input class="num" id="n-spd" type="number" min="1" max="60" value="22" onchange="onSpeed(this.value)">
+      </div>
+    </div>
+    <div class="speed-track" id="speed-track">
+      <div class="speed-pip on" id="sp0"></div><div class="speed-pip on" id="sp1"></div>
+      <div class="speed-pip on" id="sp2"></div><div class="speed-pip" id="sp3"></div>
+      <div class="speed-pip" id="sp4"></div>
+    </div>
+  </div>
+
+  <!-- Presets -->
+  <div class="sec">
+    <div class="eyebrow">Escenarios</div>
+    <div class="preset-list">
+      <div class="pset on" id="ps0" onclick="loadP(0,0.10,0.5,0.1)">
+        <div class="pset-dot" style="background:#1a6e42"></div>
+        <span class="pset-name">Óptimo</span>
+        <span class="pset-tag">α=0.10 · ~8 iter.</span>
+      </div>
+      <div class="pset" id="ps1" onclick="loadP(1,0.01,0.5,0.1)">
+        <div class="pset-dot" style="background:#3a6fb8"></div>
+        <span class="pset-name">Aprendizaje lento</span>
+        <span class="pset-tag">α=0.01 · ~80 iter.</span>
+      </div>
+      <div class="pset" id="ps2" onclick="loadP(2,0.92,0.5,0.1)">
+        <div class="pset-dot" style="background:#b83230"></div>
+        <span class="pset-name">Divergencia</span>
+        <span class="pset-tag">α=0.92 · no converge</span>
+      </div>
+      <div class="pset" id="ps3" onclick="loadP(3,0.15,-0.2,-0.3)">
+        <div class="pset-dot" style="background:#7a3ab8"></div>
+        <span class="pset-name">Inicio lejano</span>
+        <span class="pset-tag">w₀ negativo</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Formula + chart -->
+  <div class="sec">
+    <div class="eyebrow">Fórmula activa</div>
+    <div class="fbox">
+      wₙ₊₁ = wₙ − α · (∂J/∂w)<br>
+      <span class="sub">∂J/∂w₁ = <b id="f-g1">0.600</b> &nbsp;·&nbsp; ∂J/∂w₂ = <b id="f-g2">0.900</b></span>
+    </div>
+    <div class="chart-wrap"><canvas id="mini-c" style="width:100%;height:68px"></canvas></div>
+  </div>
+
+  <!-- Iteration table -->
+  <div class="sec">
+    <div class="eyebrow">Iteraciones</div>
+    <div class="tbl-wrap" id="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th>Iter</th><th>J(w)</th><th>ŷ</th><th>w₁</th><th>w₂</th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div class="conv-card" id="conv-card">
+      <div class="conv-card-title">✓ Convergencia alcanzada</div>
+      <div class="conv-grid">
+        <div><div class="conv-k">Iteraciones</div><div class="conv-v" id="cv-i">—</div></div>
+        <div><div class="conv-k">J final</div><div class="conv-v" id="cv-j">—</div></div>
+        <div><div class="conv-k">ŷ final</div><div class="conv-v" id="cv-y">—</div></div>
+        <div><div class="conv-k">Error |ŷ−1|</div><div class="conv-v" id="cv-e">—</div></div>
+      </div>
+    </div>
+  </div>
+
+</aside>
+</div><!-- .shell -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+// ══ MATH ══════════════════════════════════════════════
+const X1=2,X2=3,YT=1;
+function Jfn(w1,w2){const e=w1*X1+w2*X2-YT;return 0.5*e*e}
+function gJ(w1,w2){const e=w1*X1+w2*X2-YT;return[e*X1,e*X2]}
+const W1S=YT*X1/(X1*X1+X2*X2),W2S=YT*X2/(X1*X1+X2*X2);
+let alpha=0.1,iw1=0.5,iw2=0.1;
+let animating=false,curStep=0,pathData=[],frameN=0;
+
+function computePath(a,w1,w2,max=200){
+  const pts=[];let cw1=w1,cw2=w2;
+  for(let i=0;i<=max;i++){
+    const j=Jfn(cw1,cw2),yh=cw1*X1+cw2*X2;
+    pts.push({i,w1:cw1,w2:cw2,j,yh});
+    if(j<3e-8)break;
+    const[g1,g2]=gJ(cw1,cw2);
+    cw1-=a*g1;cw2-=a*g2;
+    if(!isFinite(cw1)||Math.abs(cw1)>80)break;
+  }
+  return pts;
+}
+
+// ══ THREE.JS SETUP ════════════════════════════════════
+const cv=document.getElementById('c3d');
+function resz(){
+  const w=cv.offsetWidth,h=cv.offsetHeight;
+  if(!w||!h)return;
+  cv.width=w;cv.height=h;
+  renderer.setSize(w,h);
+  cam.aspect=w/h;cam.updateProjectionMatrix();
+}
+const renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setClearColor(0,0);
+const scene=new THREE.Scene();
+const cam=new THREE.PerspectiveCamera(42,1,0.01,100);
+
+scene.add(new THREE.AmbientLight(0xffffff,0.55));
+const dl=new THREE.DirectionalLight(0xffffff,0.9);dl.position.set(4,7,5);scene.add(dl);
+const dl2=new THREE.DirectionalLight(0xb0c8ff,0.3);dl2.position.set(-5,2,-4);scene.add(dl2);
+
+// ── Surface ───────────────────────────────────────────
+const G=90,WR1=[-0.34,0.84],WR2=[-0.44,0.54];
+function wx(w){return(w-WR1[0])/(WR1[1]-WR1[0])*2-1}
+function wz(w){return(w-WR2[0])/(WR2[1]-WR2[0])*2-1}
+function jy(j){return Math.min(j*3.2,2.8)}
+
+let mxJ=0;
+for(let i=0;i<=G;i++)for(let j=0;j<=G;j++){
+  const jv=Jfn(WR1[0]+i/G*(WR1[1]-WR1[0]),WR2[0]+j/G*(WR2[1]-WR2[0]));
+  if(jv>mxJ)mxJ=jv;
+}
+
+const surfGeo=new THREE.PlaneGeometry(2,2,G,G);surfGeo.rotateX(-Math.PI/2);
+const vp=surfGeo.attributes.position;
+const vc=new Float32Array(vp.count*3);
+for(let i=0;i<=G;i++)for(let j=0;j<=G;j++){
+  const idx=i*(G+1)+j;
+  const jv=Jfn(WR1[0]+j/G*(WR1[1]-WR1[0]),WR2[0]+i/G*(WR2[1]-WR2[0]));
+  vp.setY(idx,jy(jv));
+  const t=Math.min(jv/mxJ,1);
+  // Cream (low error) → warm charcoal (high error)
+  vc[idx*3]=0.96-t*0.58;vc[idx*3+1]=0.93-t*0.62;vc[idx*3+2]=0.88-t*0.50;
+}
+surfGeo.setAttribute('color',new THREE.BufferAttribute(vc,3));
+surfGeo.computeVertexNormals();
+const surfMat=new THREE.MeshPhongMaterial({vertexColors:true,side:THREE.DoubleSide,transparent:true,opacity:0.93,shininess:35});
+scene.add(new THREE.Mesh(surfGeo,surfMat));
+
+// Wireframe
+const wGeo=new THREE.PlaneGeometry(2,2,24,24);wGeo.rotateX(-Math.PI/2);
+const wvp=wGeo.attributes.position;
+for(let i=0;i<=24;i++)for(let j=0;j<=24;j++){
+  const idx=i*25+j;
+  wvp.setY(idx,jy(Jfn(WR1[0]+j/24*(WR1[1]-WR1[0]),WR2[0]+i/24*(WR2[1]-WR2[0])))+0.002);
+}
+const wireMesh=new THREE.Mesh(wGeo,new THREE.MeshBasicMaterial({color:0,wireframe:true,transparent:true,opacity:0.05}));
+scene.add(wireMesh);
+
+// Contour lines (toggleable)
+const contourGroup=new THREE.Group();scene.add(contourGroup);
+function mkContour(jLvl,op){
+  const pts=[];
+  for(let i=0;i<=140;i++){
+    const a=i/140*Math.PI*2,r=Math.sqrt(2*jLvl)/Math.sqrt(X1*X1+X2*X2);
+    const w1=W1S+r*Math.cos(a)*0.44,w2=W2S+r*Math.sin(a)*0.58;
+    if(w1<WR1[0]||w1>WR1[1]||w2<WR2[0]||w2>WR2[1])continue;
+    pts.push(new THREE.Vector3(wx(w1),jy(jLvl)+0.006,wz(w2)));
+  }
+  if(pts.length<4)return;
+  contourGroup.add(new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({color:0x444444,transparent:true,opacity:op})
+  ));
+}
+[0.3,0.12,0.05,0.015,0.004].forEach((j,i)=>mkContour(j,0.12+i*0.06));
+function toggleContours(){contourGroup.visible=!contourGroup.visible}
+
+// Minimum marker
+const minSph=new THREE.Mesh(
+  new THREE.SphereGeometry(0.052,20,20),
+  new THREE.MeshPhongMaterial({color:0x1a6e42,emissive:0x0b3a22})
+);
+minSph.position.set(wx(W1S),jy(Jfn(W1S,W2S))+0.058,wz(W2S));
+scene.add(minSph);
+const torMesh=new THREE.Mesh(
+  new THREE.TorusGeometry(0.105,0.012,8,40),
+  new THREE.MeshBasicMaterial({color:0x1a6e42,transparent:true,opacity:0.5})
+);
+torMesh.position.copy(minSph.position);torMesh.rotation.x=Math.PI/2;scene.add(torMesh);
+
+// Ball
+const ball=new THREE.Mesh(
+  new THREE.SphereGeometry(0.065,22,22),
+  new THREE.MeshPhongMaterial({color:0xe8c040,emissive:0x7a5800,shininess:80})
+);
+scene.add(ball);
+
+// Gradient arrow (toggleable)
+const arrH=new THREE.ArrowHelper(new THREE.Vector3(1,0,0),new THREE.Vector3(),0.3,0x111111,0.09,0.056);
+scene.add(arrH);
+let showArrow=true;
+function toggleArrow(){
+  showArrow=!showArrow;arrH.visible=showArrow;
+  document.getElementById('btn-arrow').classList.toggle('active',showArrow);
+}
+
+// ── Path + particles + dots ────────────────────────────
+let pathMesh=null,dotMeshes=[],pinMeshes=[];
+let particleSys=null,partPositions=null,partPhases=null;
+let showTrail=true;
+
+function disposeMesh(m){if(!m)return;if(m.geometry)m.geometry.dispose();if(m.material)m.material.dispose()}
+
+function buildPath(pts){
+  disposeMesh(pathMesh);if(pathMesh)scene.remove(pathMesh);pathMesh=null;
+  if(pts.length<2)return;
+  const curve=new THREE.CatmullRomCurve3(pts);
+  const segs=Math.min(pts.length*8,600);
+  const tg=new THREE.TubeGeometry(curve,segs,0.008,6,false);
+  pathMesh=new THREE.Mesh(tg,new THREE.MeshBasicMaterial({color:0x1a1a1a,transparent:true,opacity:showTrail?0.85:0}));
+  scene.add(pathMesh);
+  buildParticles(curve,pts.length);
+}
+
+function buildParticles(curve,nSeg){
+  if(particleSys){disposeMesh(particleSys);scene.remove(particleSys);particleSys=null}
+  const N=Math.min(Math.max(nSeg*4,30),120);
+  const pos=new Float32Array(N*3);
+  partPositions=new Float32Array(N*3);
+  partPhases=new Float32Array(N);
+  // Sample curve at arc-length uniform intervals
+  for(let i=0;i<N;i++){
+    const t=i/(N-1||1);
+    const p=curve.getPointAt(t);
+    partPositions[i*3]=p.x;partPositions[i*3+1]=p.y;partPositions[i*3+2]=p.z;
+    pos[i*3]=p.x;pos[i*3+1]=p.y;pos[i*3+2]=p.z;
+    partPhases[i]=i/N; // stagger offset: particle i starts at progress i/N
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  particleSys=new THREE.Points(geo,new THREE.PointsMaterial({
+    color:0x222222,size:0.026,transparent:true,opacity:showTrail?0.55:0,sizeAttenuation:true
+  }));
+  scene.add(particleSys);
+}
+
+function animateParticles(tick){
+  if(!particleSys||!partPositions||!partPhases)return;
+  const N=partPhases.length;
+  const pos=particleSys.geometry.attributes.position.array;
+  const speed=0.22;
+  for(let i=0;i<N;i++){
+    // Each particle flows at its own staggered phase
+    const progress=(partPhases[i]+(tick*speed))%1;
+    const lo=Math.floor(progress*(N-1));
+    const hi=Math.min(lo+1,N-1);
+    const frac=progress*(N-1)-lo;
+    pos[i*3]  =partPositions[lo*3]  *(1-frac)+partPositions[hi*3]  *frac;
+    pos[i*3+1]=partPositions[lo*3+1]*(1-frac)+partPositions[hi*3+1]*frac
+               +Math.sin(tick*5+i*0.8)*0.004;
+    pos[i*3+2]=partPositions[lo*3+2]*(1-frac)+partPositions[hi*3+2]*frac;
+  }
+  particleSys.geometry.attributes.position.needsUpdate=true;
+}
+
+function toggleTrail(){
+  showTrail=!showTrail;
+  if(pathMesh)pathMesh.material.opacity=showTrail?0.85:0;
+  if(particleSys)particleSys.material.opacity=showTrail?0.55:0;
+  dotMeshes.forEach(d=>{if(d.material)d.material.opacity=showTrail?1:0});
+  document.getElementById('btn-trail').classList.toggle('active',showTrail);
+}
+
+function addDot(pos,col,r){
+  const s=new THREE.Mesh(
+    new THREE.SphereGeometry(r||0.018,10,10),
+    new THREE.MeshPhongMaterial({color:col,emissive:new THREE.Color(col).multiplyScalar(0.2),transparent:true,opacity:showTrail?1:0})
+  );
+  s.position.copy(pos);scene.add(s);dotMeshes.push(s);return s;
+}
+
+function addPin(pt,ms){
+  const px=wx(pt.w1),py=jy(pt.j)+0.068,pz=wz(pt.w2);
+  const s=new THREE.Mesh(
+    new THREE.SphereGeometry(0.036,14,14),
+    new THREE.MeshPhongMaterial({color:ms.col,emissive:new THREE.Color(ms.col).multiplyScalar(0.28)})
+  );
+  s.position.set(px,py,pz);scene.add(s);pinMeshes.push(s);dotMeshes.push(s);
+  const cyl=new THREE.Mesh(
+    new THREE.CylinderGeometry(0.003,0.003,0.1,6),
+    new THREE.MeshBasicMaterial({color:ms.col,transparent:true,opacity:0.45})
+  );
+  cyl.position.set(px,py-0.05,pz);scene.add(cyl);dotMeshes.push(cyl);
+}
+
+// ══ CAMERA ════════════════════════════════════════════
+const VIEWS={
+  iso:   {t:0.72,  p:1.06, r:6.3},
+  front: {t:0,     p:Math.PI/2-0.04, r:5.8},
+  top:   {t:0.72,  p:0.11, r:5.8},
+  side:  {t:Math.PI/2+0.02, p:1.06, r:5.8},
+  diag:  {t:Math.PI*0.35, p:0.78, r:5.6},
+};
+let sph={...VIEWS.iso};
+let sphTgt={...VIEWS.iso};
+let camLerp=false;
+
+function updateCam(){
+  cam.position.set(sph.r*Math.sin(sph.p)*Math.sin(sph.t),sph.r*Math.cos(sph.p),sph.r*Math.sin(sph.p)*Math.cos(sph.t));
+  cam.lookAt(0,0.45,0);
+}
+updateCam();
+
+function smoothCam(){
+  if(!camLerp)return;
+  const eps=0.0008;
+  let dt=sphTgt.t-sph.t;
+  while(dt>Math.PI)dt-=2*Math.PI;while(dt<-Math.PI)dt+=2*Math.PI;
+  sph.t+=dt*0.1;
+  sph.p+=(sphTgt.p-sph.p)*0.1;
+  sph.r+=(sphTgt.r-sph.r)*0.1;
+  if(Math.abs(dt)<eps&&Math.abs(sphTgt.p-sph.p)<eps&&Math.abs(sphTgt.r-sph.r)<eps){
+    sph.t=sphTgt.t;sph.p=sphTgt.p;sph.r=sphTgt.r;camLerp=false;
+  }
+  updateCam();
+}
+
+function goView(name){sphTgt={...VIEWS[name]||VIEWS.iso};camLerp=true}
+function resetCam(){goView('iso')}
+function zoomIn(){sph.r=sphTgt.r=Math.max(2,sph.r-0.7);updateCam()}
+function zoomOut(){sph.r=sphTgt.r=Math.min(12,sph.r+0.7);updateCam()}
+function focusBall(){
+  // Point camera toward ball + zoom in
+  const bx=ball.position.x,by=ball.position.y,bz=ball.position.z;
+  sphTgt.r=3.0;
+  sphTgt.t=Math.atan2(bx,bz);
+  sphTgt.p=Math.max(0.2,Math.min(Math.PI*0.46,Math.atan2(Math.sqrt(bx*bx+bz*bz),by+0.1)));
+  camLerp=true;
+}
+
+// Mouse drag
+let isDrag=false,pm={x:0,y:0},hasDragged=false;
+cv.addEventListener('mousedown',e=>{isDrag=true;pm={x:e.clientX,y:e.clientY};hasDragged=false});
+window.addEventListener('mouseup',()=>isDrag=false);
+window.addEventListener('mousemove',e=>{
+  if(!isDrag)return;
+  const dx=e.clientX-pm.x,dy=e.clientY-pm.y;
+  if(Math.abs(dx)+Math.abs(dy)>2){
+    hasDragged=true;
+    hideDragHint();
+    sph.t-=dx*0.007;
+    sph.p=Math.max(0.07,Math.min(Math.PI*0.47,sph.p+dy*0.005));
+    pm={x:e.clientX,y:e.clientY};camLerp=false;updateCam();
+  }
+});
+// Double-click to focus on point under cursor (simplified: just focus ball)
+cv.addEventListener('dblclick',()=>focusBall());
+
+cv.addEventListener('wheel',e=>{
+  hideDragHint();
+  sph.r=Math.max(2,Math.min(12,sph.r+e.deltaY*0.005));
+  sphTgt.r=sph.r;updateCam();e.preventDefault();
+},{passive:false});
+
+// Touch
+let ts0=null;
+cv.addEventListener('touchstart',e=>{isDrag=true;ts0=e.touches[0]},{passive:true});
+cv.addEventListener('touchend',()=>{isDrag=false;ts0=null});
+cv.addEventListener('touchmove',e=>{
+  if(!ts0)return;hideDragHint();camLerp=false;
+  const t=e.touches[0];
+  sph.t-=(t.clientX-ts0.clientX)*0.008;
+  sph.p=Math.max(0.07,Math.min(Math.PI*0.47,sph.p+(t.clientY-ts0.clientY)*0.006));
+  ts0=t;updateCam();e.preventDefault();
+},{passive:false});
+
+function toggleWire(){wireMesh.material.opacity=wireMesh.material.opacity>0.03?0:0.1}
+function toggleOpacity(){surfMat.opacity=surfMat.opacity>0.5?0.2:0.93}
+
+// Drag hint
+let hintShown=true;
+function hideDragHint(){
+  if(!hintShown)return;hintShown=false;
+  document.getElementById('drag-hint').classList.add('gone');
+}
+setTimeout(hideDragHint,4000);
+
+// ══ CHART ═════════════════════════════════════════════
+const mcc=document.getElementById('mini-c');
+let miniChart=null;
+function initChart(){
+  mcc.width=mcc.offsetWidth||260;mcc.height=68;
+  if(miniChart)miniChart.destroy();
+  miniChart=new Chart(mcc,{
+    type:'line',
+    data:{labels:[],datasets:[{data:[],borderColor:'#111',backgroundColor:'rgba(0,0,0,0.04)',fill:true,borderWidth:1.5,pointRadius:0,tension:0.4}]},
+    options:{
+      responsive:false,animation:{duration:0},
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{ticks:{color:'#aaa',font:{size:8},maxTicksLimit:8},grid:{color:'rgba(0,0,0,0.04)'}},
+        y:{ticks:{color:'#aaa',font:{size:8},maxTicksLimit:4,callback:v=>v.toFixed(3)},grid:{color:'rgba(0,0,0,0.04)'}}
+      }
+    }
+  });
+}
+initChart();
+function pushChart(i,j){if(!miniChart)return;miniChart.data.labels.push(i);miniChart.data.datasets[0].data.push(j);miniChart.update('none')}
+
+// ══ MILESTONES ════════════════════════════════════════
+const MS=[
+  {j:0.04, label:'inicio',col:0xe03020},
+  {j:0.02, label:'-50%', col:0xe07020},
+  {j:0.01, label:'-75%', col:0xc8a020},
+  {j:0.005,label:'-90%', col:0x2eaa60},
+  {j:0.001,label:'conv.',col:0x1a6e42},
+];
+let msHit=new Set();
+function checkMS(j){for(const m of MS)if(j<=m.j&&!msHit.has(m.label))return m;return null}
+
+let toastT=null;
+function showToast(msg){
+  const el=document.getElementById('toast');
+  el.textContent='Milestone: '+msg;el.classList.add('show');
+  clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove('show'),2000);
+}
+
+// ══ TABLE ═════════════════════════════════════════════
+const tbEl=document.getElementById('tbody');
+let rows=[],maxJSeen=0.045;
+
+function addRow(pt){
+  const ms=checkMS(pt.j);
+  if(ms){msHit.add(ms.label);addPin(pt,ms);showToast(ms.label)}
+  if(pt.j>maxJSeen)maxJSeen=pt.j;
+  const bw=Math.round(Math.min(pt.j/maxJSeen*52,52));
+  const isConv=pt.j<0.001,isDivg=!isFinite(pt.j)||pt.j>100;
+  const tr=document.createElement('tr');
+  tr.id='r'+pt.i;
+  tr.className=isConv?'r-conv':isDivg?'r-div':ms?'r-ms':'r-hi';
+  const pill=ms?`<span class="ms-pill">${ms.label}</span>`:'';
+  tr.innerHTML=
+    `<td>${pt.i}${pill}</td>`+
+    `<td><span class="jbar" style="width:${bw}px"></span>${pt.j.toFixed(5)}</td>`+
+    `<td>${pt.yh.toFixed(4)}</td>`+
+    `<td>${pt.w1.toFixed(4)}</td>`+
+    `<td>${pt.w2.toFixed(4)}</td>`;
+  tbEl.appendChild(tr);rows.push(tr);
+  const wrap=document.getElementById('tbl-wrap');
+  if(wrap)wrap.scrollTop=wrap.scrollHeight;
+}
+function markRow(i){
+  rows.forEach(r=>{if(!r.classList.contains('r-conv')&&!r.classList.contains('r-ms')&&!r.classList.contains('r-div'))r.classList.remove('r-hi')});
+  const tr=document.getElementById('r'+i);
+  if(tr&&!tr.classList.contains('r-conv')&&!tr.classList.contains('r-ms'))tr.classList.add('r-hi');
+}
+
+// ══ HUD + CALC OVERLAY ════════════════════════════════
+function updateHUD(pt){
+  document.getElementById('h-i').textContent=pt.i;
+  const jEl=document.getElementById('h-j');jEl.textContent=pt.j.toFixed(5);
+  jEl.className='hud-v '+(pt.j<0.001?'ok':pt.j<0.015?'amber':'red');
+  const yEl=document.getElementById('h-y');yEl.textContent=pt.yh.toFixed(4);
+  yEl.className='hud-v '+(Math.abs(pt.yh-YT)<0.05?'ok':Math.abs(pt.yh-YT)<0.2?'amber':'');
+  document.getElementById('h-w').textContent=pt.w1.toFixed(3)+'/'+pt.w2.toFixed(3);
+  const[g1,g2]=gJ(pt.w1,pt.w2);
+  document.getElementById('f-g1').textContent=g1.toFixed(3);
+  document.getElementById('f-g2').textContent=g2.toFixed(3);
+  document.getElementById('prog').style.width=
+    (pathData.length>1?Math.min(100,curStep/(pathData.length-1)*100):0)+'%';
+  // Arrow
+  if(showArrow){
+    const px=wx(pt.w1),py=jy(pt.j)+0.025,pz=wz(pt.w2);
+    arrH.position.set(px,py,pz);
+    const dx=wx(pt.w1-alpha*g1)-px,dz=wz(pt.w2-alpha*g2)-pz;
+    const ln=Math.sqrt(dx*dx+dz*dz)||0.001;
+    arrH.setDirection(new THREE.Vector3(dx/ln,0,dz/ln));
+    arrH.setLength(Math.min(ln*2,0.55),0.1,0.06);
+  }
+}
+
+function updateCalcOv(pt,prev){
+  const[g1,g2]=gJ(pt.w1,pt.w2);
+  const err=pt.yh-YT;
+  const nw1=(prev.w1-alpha*g1);
+  const nw2=(prev.w2-alpha*g2);
+  document.getElementById('co-yh').textContent=pt.yh.toFixed(4);
+  const jEl=document.getElementById('co-j');jEl.textContent=pt.j.toFixed(5);
+  jEl.className='v '+(pt.j<0.001?'ok':pt.j<0.015?'amber':'red');
+  document.getElementById('co-e').textContent=err.toFixed(4);
+  document.getElementById('co-g1').textContent=g1.toFixed(4);
+  document.getElementById('co-g2').textContent=g2.toFixed(4);
+  document.getElementById('co-w1p').textContent=prev.w1.toFixed(4);
+  document.getElementById('co-g1b').textContent=g1.toFixed(4);
+  document.getElementById('co-w1n').textContent=nw1.toFixed(4);
+  document.getElementById('co-w2p').textContent=prev.w2.toFixed(4);
+  document.getElementById('co-g2b').textContent=g2.toFixed(4);
+  document.getElementById('co-w2n').textContent=nw2.toFixed(4);
+  document.getElementById('co-iter').textContent=pt.i;
+  document.getElementById('co-a').textContent=alpha.toFixed(2);
+}
+
+// ══ CORE CONTROLS ═════════════════════════════════════
+let pathPts=[];
+
+function resetPath(){
+  // Dispose & remove Three.js objects to prevent memory leaks
+  dotMeshes.forEach(s=>{disposeMesh(s);scene.remove(s)});dotMeshes=[];pinMeshes=[];
+  if(pathMesh){disposeMesh(pathMesh);scene.remove(pathMesh);pathMesh=null}
+  if(particleSys){disposeMesh(particleSys);scene.remove(particleSys);particleSys=null;partPositions=null;partPhases=null}
+  pathPts=[];curStep=0;animating=false;frameN=0;
+  msHit=new Set();rows=[];tbEl.innerHTML='';maxJSeen=0.045;
+  pathData=computePath(alpha,iw1,iw2);
+  const pt=pathData[0];
+  ball.position.set(wx(pt.w1),jy(pt.j)+0.026,wz(pt.w2));
+  updateHUD(pt);setBtnState('idle');
+  document.getElementById('conv-card').classList.remove('show');
+  document.getElementById('calc-ov').classList.remove('show');
+  document.getElementById('ov-legend').style.display='flex';
+  initChart();addRow(pt);
+  addDot(ball.position.clone(),0xe03020,0.034);
+}
+
+function stepOnce(){
+  if(curStep>=pathData.length-1)return;
+  const prev=pathData[curStep];
+  curStep++;
+  const pt=pathData[curStep];
+  ball.position.set(wx(pt.w1),jy(pt.j)+0.026,wz(pt.w2));
+  pathPts.push(ball.position.clone());
+  buildPath(pathPts);
+  if(curStep<8||curStep%4===0)addDot(ball.position.clone(),0x777777,0.017);
+  updateHUD(pt);updateCalcOv(pt,prev);
+  document.getElementById('calc-ov').classList.add('show');
+  document.getElementById('ov-legend').style.display='none';
+  pushChart(pt.i,pt.j);addRow(pt);markRow(pt.i);
+  if(curStep>=pathData.length-1){
+    animating=false;
+    const isDivg=!isFinite(pt.j)||pt.j>50;
+    setBtnState(isDivg?'diverged':'done');
+    if(!isDivg){
+      document.getElementById('conv-card').classList.add('show');
+      document.getElementById('cv-i').textContent=pt.i;
+      document.getElementById('cv-j').textContent=pt.j.toFixed(6);
+      document.getElementById('cv-y').textContent=pt.yh.toFixed(4);
+      document.getElementById('cv-e').textContent=Math.abs(pt.yh-YT).toFixed(4);
+    }
+  }
+}
+
+function runFull(){
+  const BATCH=10;
+  let k=0;
+  function chunk(){
+    while(k++<BATCH&&curStep<pathData.length-1)stepOnce();
+    if(curStep<pathData.length-1)requestAnimationFrame(chunk);
+  }
+  chunk();
+}
+
+function toggleAnim(){
+  if(curStep>=pathData.length-1){resetPath();return}
+  animating=!animating;
+  setBtnState(animating?'running':'paused');
+}
+
+function setBtnState(s){
+  const btn=document.getElementById('play-btn');
+  document.getElementById('play-icon').textContent=
+    s==='running'?'⏸':s==='done'?'✓':s==='diverged'?'✗':'▶';
+  document.getElementById('play-lbl').textContent=
+    s==='running'?'Pausar':s==='paused'?'Continuar':s==='done'?'Convergió':s==='diverged'?'Divergió':'Iniciar descenso';
+  btn.className='playbtn'+(s==='done'?' done':s==='diverged'?' diverged':s==='running'?' running':'');
+}
+
+function syncP(id,raw){
+  const val=parseFloat(raw);if(isNaN(val))return;
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  if(id==='a'){alpha=clamp(val,0.01,0.95);document.getElementById('sl-a').value=alpha;document.getElementById('n-a').value=alpha.toFixed(2)}
+  else if(id==='w1'){iw1=clamp(val,-0.25,0.75);document.getElementById('sl-w1').value=iw1;document.getElementById('n-w1').value=iw1.toFixed(2)}
+  else if(id==='w2'){iw2=clamp(val,-0.35,0.45);document.getElementById('sl-w2').value=iw2;document.getElementById('n-w2').value=iw2.toFixed(2)}
+  resetPath();
+}
+
+function onSpeed(v){
+  v=Math.max(1,Math.min(60,+v));
+  document.getElementById('sl-spd').value=v;document.getElementById('n-spd').value=v;
+  // Update speed pips
+  const t=Math.round((v/60)*5);
+  for(let i=0;i<5;i++)document.getElementById('sp'+i).classList.toggle('on',i<t);
+}
+
+function loadP(idx,a,w1,w2){
+  alpha=a;iw1=w1;iw2=w2;
+  document.getElementById('sl-a').value=a;document.getElementById('n-a').value=a.toFixed(2);
+  document.getElementById('sl-w1').value=w1;document.getElementById('n-w1').value=w1.toFixed(2);
+  document.getElementById('sl-w2').value=w2;document.getElementById('n-w2').value=w2.toFixed(2);
+  document.querySelectorAll('.pset').forEach((r,i)=>r.classList.toggle('on',i===idx));
+  resetPath();
+}
+
+// ══ CSV EXPORT ════════════════════════════════════════
+function exportCSV(){
+  if(!pathData.length){alert('Ejecuta el descenso primero.');return}
+  const rows=[['iteracion','w1','w2','J','yhat']];
+  const data=curStep>0?pathData.slice(0,curStep+1):pathData;
+  data.forEach(p=>rows.push([p.i,p.w1.toFixed(6),p.w2.toFixed(6),p.j.toFixed(8),p.yh.toFixed(6)]));
+  const csv=rows.map(r=>r.join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download='gradiente_descenso.csv';a.click();
+}
+
+// ══ RENDER LOOP ═══════════════════════════════════════
+let tick=0;
+function render(){
+  requestAnimationFrame(render);
+  tick+=0.013;
+  minSph.position.y=jy(Jfn(W1S,W2S))+0.058+Math.sin(tick*2.4)*0.014;
+  torMesh.position.y=minSph.position.y-0.032;
+  torMesh.rotation.y=tick*0.5;
+  smoothCam();
+  animateParticles(tick);
+  if(animating&&pathData.length>1){
+    frameN++;
+    const spd=parseInt(document.getElementById('sl-spd').value)||22;
+    const delay=Math.max(1,Math.floor(62-spd));
+    if(frameN%delay===0&&curStep<pathData.length-1)stepOnce();
+  }
+  renderer.render(scene,cam);
+}
+
+// Init
+const ro=new ResizeObserver(()=>resz());
+ro.observe(cv.parentElement);
+window.addEventListener('resize',resz);
+resz();resetPath();
+document.getElementById('btn-trail').classList.add('active');
+document.getElementById('btn-arrow').classList.add('active');
+onSpeed(22);
+render();
+</script>
+</body>
+</html>

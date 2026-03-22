@@ -50,21 +50,16 @@ body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-weigh
 .leg-row{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:9px;color:var(--dim);letter-spacing:.05em}
 .leg-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
 
-/* Calc overlay — appears when stepping, replaces legend */
-.calc-ov{
-  position:absolute;top:16px;right:16px;
-  background:rgba(244,242,237,.97);border:1px solid var(--line2);
-  border-radius:8px;padding:14px 16px;width:232px;
-  display:none;z-index:60;font-family:var(--mono);
-}
-.calc-ov.show{display:block}
-.calc-ov-title{font-size:8.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--dimmer);margin-bottom:10px}
-.calc-row{font-size:11px;line-height:2.1;color:var(--ink)}
-.calc-row .k{color:var(--dim);font-size:9.5px}
+/* Calc panel — inside side panel, below formula */
+.calc-panel{display:none;background:var(--paper2);border-radius:4px;padding:11px 13px;font-family:var(--mono);margin-top:9px}
+.calc-panel.show{display:block}
+.calc-ov-title{font-size:8.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--dimmer);margin-bottom:9px}
+.calc-row{font-size:10.5px;line-height:2;color:var(--ink)}
+.calc-row .k{color:var(--dim);font-size:9px}
 .calc-row .v{font-weight:500}
 .calc-row .v.red{color:var(--red)}.calc-row .v.amber{color:var(--amber)}.calc-row .v.ok{color:var(--green)}
-.calc-div{height:1px;background:var(--line);margin:8px 0}
-.calc-eq{font-size:10.5px;color:var(--ink2);line-height:2.1}
+.calc-div{height:1px;background:var(--line);margin:7px 0}
+.calc-eq{font-size:10px;color:var(--ink2);line-height:2}
 .calc-eq .k{color:var(--dim);font-size:9px}
 .calc-eq .new{font-weight:500;color:var(--green)}
 
@@ -192,8 +187,6 @@ tr.r-div td{background:rgba(184,50,48,.06);color:var(--red)}
   .cam-strip{bottom:8px;left:8px;gap:3px}
   .cbtn{height:25px;padding:0 7px;font-size:8.5px}
   .tbl-wrap{max-height:160px}
-  .calc-ov{width:190px;padding:10px 12px}
-  .calc-eq{font-size:9.5px}.calc-row{font-size:10px}
 }
 </style>
 </head>
@@ -231,29 +224,6 @@ tr.r-div td{background:rgba(184,50,48,.06);color:var(--red)}
     <div class="leg-row"><div class="leg-dot" style="background:#e8c040"></div>Posición actual</div>
     <div class="leg-row"><div class="leg-dot" style="background:#1a6e42"></div>Mínimo global w*</div>
     <div class="leg-row"><div class="leg-dot" style="background:#444"></div>Trayectoria + flujo</div>
-  </div>
-
-  <!-- Step-by-step calc panel -->
-  <div class="calc-ov" id="calc-ov">
-    <div class="calc-ov-title">// Cálculo iteración actual</div>
-    <div class="calc-row"><span class="k">ŷ  =</span> w₁·2 + w₂·3 = <span class="v" id="co-yh">1.3000</span></div>
-    <div class="calc-row"><span class="k">J  =</span> ½(ŷ−1)² = <span class="v red" id="co-j">0.04500</span></div>
-    <div class="calc-div"></div>
-    <div class="calc-eq">
-      <span class="k">∂J/∂ŷ</span> = ŷ−y = <span id="co-e">0.3000</span><br>
-      <span class="k">∂J/∂w₁</span> = ∂J/∂ŷ·2 = <span id="co-g1">0.6000</span><br>
-      <span class="k">∂J/∂w₂</span> = ∂J/∂ŷ·3 = <span id="co-g2">0.9000</span>
-    </div>
-    <div class="calc-div"></div>
-    <div class="calc-eq">
-      w₁: <span id="co-w1p">0.5000</span> − α·<span id="co-g1b">0.6000</span> = <span class="new" id="co-w1n">0.4400</span><br>
-      w₂: <span id="co-w2p">0.1000</span> − α·<span id="co-g2b">0.9000</span> = <span class="new" id="co-w2n">0.0100</span>
-    </div>
-    <div class="calc-div"></div>
-    <div class="calc-row" style="font-size:9.5px">
-      <span class="k">iter</span> <span class="v" id="co-iter">0</span>
-      &nbsp;<span class="k">α</span> <span class="v" id="co-a">0.10</span>
-    </div>
   </div>
 
   <!-- Camera controls -->
@@ -368,7 +338,31 @@ tr.r-div td{background:rgba(184,50,48,.06);color:var(--red)}
       <span class="sub">∂J/∂w₁ = <b id="f-g1">0.600</b> &nbsp;·&nbsp; ∂J/∂w₂ = <b id="f-g2">0.900</b></span>
     </div>
     <div class="chart-wrap"><canvas id="mini-c" style="width:100%;height:68px"></canvas></div>
-  </div>
+
+    <!-- Step-by-step calc — appears below chart when stepping -->
+    <div class="calc-panel" id="calc-ov">
+      <div class="calc-ov-title">// Cálculo · iteración actual</div>
+      <div class="calc-row"><span class="k">ŷ  =</span> w₁·2 + w₂·3 = <span class="v" id="co-yh">1.3000</span></div>
+      <div class="calc-row"><span class="k">J  =</span> ½(ŷ−1)² = <span class="v red" id="co-j">0.04500</span></div>
+      <div class="calc-div"></div>
+      <div class="calc-eq">
+        <span class="k">∂J/∂ŷ</span> = ŷ−y = <span id="co-e">0.3000</span><br>
+        <span class="k">∂J/∂w₁</span> = ∂J/∂ŷ·2 = <span id="co-g1">0.6000</span><br>
+        <span class="k">∂J/∂w₂</span> = ∂J/∂ŷ·3 = <span id="co-g2">0.9000</span>
+      </div>
+      <div class="calc-div"></div>
+      <div class="calc-eq">
+        w₁: <span id="co-w1p">0.5000</span> − α·<span id="co-g1b">0.6000</span> = <span class="new" id="co-w1n">0.4400</span><br>
+        w₂: <span id="co-w2p">0.1000</span> − α·<span id="co-g2b">0.9000</span> = <span class="new" id="co-w2n">0.0100</span>
+      </div>
+      <div class="calc-div"></div>
+      <div class="calc-row" style="font-size:9px">
+        <span class="k">iter</span> <span class="v" id="co-iter">0</span>
+        &nbsp;<span class="k">α</span> <span class="v" id="co-a">0.10</span>
+      </div>
+    </div>
+
+  </div><!-- /sec formula -->
 
   <!-- Iteration table -->
   <div class="sec">
@@ -836,7 +830,6 @@ function resetPath(){
   updateHUD(pt);setBtnState('idle');
   document.getElementById('conv-card').classList.remove('show');
   document.getElementById('calc-ov').classList.remove('show');
-  document.getElementById('ov-legend').style.display='flex';
   initChart();addRow(pt);
   addDot(ball.position.clone(),0xe03020,0.034);
 }
@@ -852,7 +845,6 @@ function stepOnce(){
   if(curStep<8||curStep%4===0)addDot(ball.position.clone(),0x777777,0.017);
   updateHUD(pt);updateCalcOv(pt,prev);
   document.getElementById('calc-ov').classList.add('show');
-  document.getElementById('ov-legend').style.display='none';
   pushChart(pt.i,pt.j);addRow(pt);markRow(pt.i);
   if(curStep>=pathData.length-1){
     animating=false;
